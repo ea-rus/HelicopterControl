@@ -1,4 +1,4 @@
 HelicopterControl
 =================
 
-IR Helicopter Control application 
+IR Helicopter Control application for Sima107
