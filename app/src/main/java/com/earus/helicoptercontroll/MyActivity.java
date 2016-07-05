@@ -2,10 +2,14 @@ package com.earus.helicoptercontroll;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
+import android.view.InputDevice;
+import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
@@ -15,6 +19,8 @@ import android.widget.EditText;
 import android.widget.NumberPicker;
 import android.widget.SeekBar;
 import android.widget.TextView;
+
+import com.zerokol.views.JoystickView;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -42,7 +48,7 @@ No. Throttle  Direction                  Binary                              Dec
 
 public class MyActivity extends Activity {
 
-    private NumberPicker calibration;
+    private int calibration;
     private VerticalSeekBar throttle;
     private VerticalSeekBar direct_forward;
     private SeekBar direct_side;
@@ -53,7 +59,8 @@ public class MyActivity extends Activity {
     private Class irClass;
     private Method sendIR;
     private Method readIR;
-
+    private JoystickView joystick;
+    private JoystickView joystick_throttle;
 
     private void Alert(Exception e){
         StringWriter sw = new StringWriter();
@@ -68,40 +75,166 @@ public class MyActivity extends Activity {
 
     Timer irTimer;
 
+
+
+    public static final String PREFS_NAME = "HelicopterControll";
+
+
+    float c_tmin,c_tmax, c_left, c_right, c_fwd, c_back;
+    Integer c_calib;
+    long joystickinterval;
+
+
+
+
+    public void Save( View view){
+        String config=configedit.getText().toString();
+
+        String [] ar = config.split("\n");
+
+        String [] ar2;
+
+        ar2=ar[0].split(" ");
+        c_tmin= Integer.parseInt(ar2[0]);
+        c_tmax= Integer.parseInt(ar2[1]);
+
+        ar2=ar[1].split(" ");
+        c_left= Integer.parseInt(ar2[0]);
+        c_right= Integer.parseInt(ar2[1]);
+
+        ar2=ar[2].split(" ");
+        c_back= Integer.parseInt(ar2[0]);
+        c_fwd= Integer.parseInt(ar2[1]);
+
+        c_calib= Integer.parseInt(ar[3]);
+
+         joystickinterval =  Integer.parseInt(ar[4]);
+
+        //return joystickinterval;
+    }
+
+    EditText configedit ;
+
+//    @Override
+//    public boolean onKeyDown(int keyCode, KeyEvent event) {
+//        boolean handled = false;
+//
+//        textlog.setText(Integer.toString(keyCode)+" : "+event.getSource()+" : "+InputDevice.SOURCE_GAMEPAD +" : "+ event.getRepeatCount())  ;
+//
+//
+//        //return super.onKeyDown(keyCode, event);
+//        return true;
+//    }
+
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_my);
 
-        calibration = (NumberPicker) findViewById(R.id.calibration);
-        throttle = (VerticalSeekBar) findViewById(R.id.throttle);
-        direct_forward = (VerticalSeekBar) findViewById(R.id.direct_forward);
-        direct_side = (SeekBar) findViewById(R.id.direct_side);
+        SharedPreferences settings = getSharedPreferences(PREFS_NAME, 0);
+        String config = settings.getString("config", null);
+
+
+
+        if (config ==null){
+             config="0 255\n" + //Throttle
+                    "-64 63\n" +//LeftRight
+                    "-128 127\n" +//FwdBack
+                    "52\n" + //calibration
+                    "200"; //joystick interval
+
+        }
+
+        configedit = (EditText) findViewById(R.id.config);
+
+        configedit.setText(config);
+
+        Save(joystick);
+
+
+
         textlog = (EditText) findViewById(R.id.textlog);
 
+//
+//        Button button_joystick = (Button) findViewById(R.id.button_joystick);
+//        button_joystick.setOnClickListener(new View.OnClickListener() {
+//            @Override
+//            public void onClick(View v) {
+//
+//            }
+//        });
 
 
-        calibration.setMaxValue(100);
-        calibration.setMinValue(0);
-        calibration.setMinValue(52);
 
-        calibration.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);
-        this.clear(null);
+
+        joystick = (JoystickView) findViewById(R.id.joystickView);
+        joystick_throttle = (JoystickView) findViewById(R.id.joystickView_throttle);
+
+
+
+        joystick_throttle.setOnJoystickMoveListener(new JoystickView.OnJoystickMoveListener() {
+
+            @Override
+            public void onValueChanged(int angle, int pwr, int direction) {
+
+               // if (power>3 && Math.abs(angle)<180) {
+
+                float p = -joystick_throttle.getYpos();
+                int power = (int) (p* (c_tmax-c_tmin)/200 + ((c_tmax+c_tmin)/2));// 0..100 to c*
+
+                power=Math.abs(power);
+
+                p = joystick.getXpos();
+                int leftRight = (int) ( p* (c_right-c_left)/200 + (c_right+c_left)/2);
+
+                p =-joystick.getYpos();
+                int forwardBackward = (int) (p* (c_fwd-c_back)/200 + (c_fwd+c_back)/2);
+
+
+                    String irCode = mkCommand(power, leftRight, forwardBackward, c_calib);
+
+                    try {
+                        sendIR.invoke(irService, irCode);
+                    } catch (Exception e) {
+                        Alert(e);
+                        e.printStackTrace();
+                    }
+                    //Log.d("ir", irCode);
+                    textlog.setText(Integer.toString(power)+" : "+Integer.toString(leftRight)+" : "+Integer.toString(forwardBackward));
+
+             //   }
+
+                //textlog.append(Integer.toString(power)+"-"+Integer.toString(joystick.getXpos())+"-"+Integer.toString(joystick.getYpos())+"\n");
+
+
+            }
+        }, joystickinterval);
+
+        //this.clear(null);
 //        text_code = //(TextView) findViewById(R.id.text_code);
 
         try{
 
-            irService =  this.getSystemService("irda");
+            Context context=this.getApplicationContext();
+            Class contClass=context.getClass();
+
+            String ir_service_name=(String) contClass.getField("CONSUMER_IR_SERVICE").get(context);
+            irService =  this.getSystemService(ir_service_name);
             irClass = irService.getClass();
-    
-    
-            readIR = irClass.getMethod("read_irsend");
+
+
+
             sendIR = irClass.getMethod("write_irsend", new Class[]{String.class});
+            readIR = irClass.getMethod("read_irsend");
 
         } catch (Exception e) {
             Alert( e );
             e.printStackTrace();
         }
+
+
 
 
 
@@ -133,30 +266,30 @@ public class MyActivity extends Activity {
         final Handler uiHandler = new Handler();
 
 
-        irTimer.schedule(new TimerTask() { // Определяем задачу
-            @Override
-            public void run() {
-                uiHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        int t = throttle.getProgress();
-                        if (t>3) {
-                            String irCode = mkCommand(t, direct_side.getProgress(), direct_forward.getProgress(), calibration.getValue());
-                            textlog.append(Integer.toString(t)+"\n");
-                            try {
-                                sendIR.invoke(irService, irCode);
-                            } catch (Exception e) {
-                                Alert(e);
-                                e.printStackTrace();
-                            }
-
-                        }
-                    }
-                });
-            }
-
-            ;
-        }, 500, 180); // интервал - 60000 миллисекунд, 0 миллисекунд до первого запуска.
+//        irTimer.schedule(new TimerTask() { // Определяем задачу
+//            @Override
+//            public void run() {
+//                uiHandler.post(new Runnable() {
+//                    @Override
+//                    public void run() {
+//                        int t = throttle.getProgress();
+//                        if (t>3) {
+//                            String irCode = mkCommand(t, direct_side.getProgress(), direct_forward.getProgress(), calibration.getValue());
+//                            textlog.append(Integer.toString(t)+"\n");
+//                            try {
+//                                sendIR.invoke(irService, irCode);
+//                            } catch (Exception e) {
+//                                Alert(e);
+//                                e.printStackTrace();
+//                            }
+//
+//                        }
+//                    }
+//                });
+//            }
+//
+//            ;
+//        }, 500, 180); // интервал - 60000 миллисекунд, 0 миллисекунд до первого запуска.
     }
 
 
@@ -202,9 +335,10 @@ public class MyActivity extends Activity {
     }
 
     public void clear (View view){
-        throttle.setProgress(0);
-        direct_forward.setProgress(50);
-        direct_side.setProgress(50);
+        textlog.setText("");
+//        //throttle.setProgress(0);
+//        direct_forward.setProgress(50);
+//        direct_side.setProgress(50);
     }
 
 
@@ -242,6 +376,18 @@ public class MyActivity extends Activity {
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    protected void onStop() {
+        super.onStop();
+
+        EditText config = (EditText) findViewById(R.id.config);
+        SharedPreferences settings = getSharedPreferences(PREFS_NAME, 0);
+        SharedPreferences.Editor editor = settings.edit();
+        String configstr = config.getText().toString();
+        editor.putString("config", configstr);
+        editor.commit();
+
     }
 }
 
