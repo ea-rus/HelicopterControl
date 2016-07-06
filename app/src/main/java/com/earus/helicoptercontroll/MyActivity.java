@@ -19,12 +19,14 @@ import android.widget.EditText;
 import android.widget.NumberPicker;
 import android.widget.SeekBar;
 import android.widget.TextView;
-
+import android.hardware.ConsumerIrManager;
 import com.zerokol.views.JoystickView;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -55,7 +57,7 @@ public class MyActivity extends Activity {
     private EditText textlog;
 
 
-    private Object irService;
+    private ConsumerIrManager irService;
     private Class irClass;
     private Method sendIR;
     private Method readIR;
@@ -193,10 +195,20 @@ public class MyActivity extends Activity {
                 int forwardBackward = (int) (p* (c_fwd-c_back)/200 + (c_fwd+c_back)/2);
 
 
-                    String irCode = mkCommand(power, leftRight, forwardBackward, c_calib);
+                List<Integer>  irCode = mkCommand(power, leftRight, forwardBackward, c_calib);
+//                int[] irCodeArray = irCode.toArray(new int[irCode.size()]);
+
+                int[] irCodeArray = new int[irCode.size()];
+
+                for (int i=0; i < irCodeArray.length; i++)
+                {
+                    irCodeArray[i] = irCode.get(i);
+                }
+
 
                     try {
-                        sendIR.invoke(irService, irCode);
+
+                        irService.transmit(38000, irCodeArray);
                     } catch (Exception e) {
                         Alert(e);
                         e.printStackTrace();
@@ -219,15 +231,12 @@ public class MyActivity extends Activity {
 
             Context context=this.getApplicationContext();
             Class contClass=context.getClass();
-
-            String ir_service_name=(String) contClass.getField("CONSUMER_IR_SERVICE").get(context);
-            irService =  this.getSystemService(ir_service_name);
-            irClass = irService.getClass();
+            irService = (ConsumerIrManager)getSystemService(Context.CONSUMER_IR_SERVICE);
 
 
 
-            sendIR = irClass.getMethod("write_irsend", new Class[]{String.class});
-            readIR = irClass.getMethod("read_irsend");
+
+
 
         } catch (Exception e) {
             Alert( e );
@@ -296,7 +305,7 @@ public class MyActivity extends Activity {
     private int ROTATION_STATIONARY=60;
 
 
-    private String mkCommand(int throttle, int leftRight, int forwardBackward, int calibr)
+    private List<Integer>  mkCommand(int throttle, int leftRight, int forwardBackward, int calibr)
     {
         leftRight=(int)( (double)leftRight*1.27 - 64 + ROTATION_STATIONARY);
 
@@ -306,32 +315,56 @@ public class MyActivity extends Activity {
 
         String out="38000,76,76,14";
 
+
+        List<Integer> pattern = new ArrayList<Integer>();
+
+        pattern.add(2040);
+        pattern.add(2000);
+        pattern.add(380);
+
+        int pulse_end=380;
+        int pulse_1=600;
+        int pulse_0=220;
+
         int b;
 
         for (int i = 7; i >=0; i--)
         {
             b = ((leftRight & (1 << i)) >> i );
-            if (b > 0) out+=",23,14"; else  out+=",8,14";
+            if (b > 0) pattern.add(pulse_1);
+            else pattern.add(pulse_0);
+            pattern.add(pulse_end);
+             //   out+=",23,14"; else  out+=",8,14";
+
         }
 
         for (int i = 7; i >=0; i--)
         {
             b = ((63 + forwardBackward) & (1 << i)) >> i;
-            if (b > 0) out+=",23,14"; else  out+=",8,14";
+            if (b > 0) pattern.add(pulse_1);
+            else pattern.add(pulse_0);
+            pattern.add(pulse_end);
+//            if (b > 0) out+=",23,14"; else  out+=",8,14";
         }
 
         for (int i = 7; i >=0; i--)
         {
             b = (throttle & (1 << i)) >> i;
-            if (b > 0) out+=",23,14"; else  out+=",8,14";
+            if (b > 0) pattern.add(pulse_1);
+            else pattern.add(pulse_0);
+            pattern.add(pulse_end);
+//            if (b > 0) out+=",23,14"; else  out+=",8,14";
         }
 
         for (int i = 7; i >=0; i--)
         {
             b = (calibr & (1 << i)) >> i;
-            if (b > 0) out+=",23,14"; else  out+=",8,14";
+            if (b > 0) pattern.add(pulse_1);
+            else pattern.add(pulse_0);
+            pattern.add(pulse_end);
+//            if (b > 0) out+=",23,14"; else  out+=",8,14";
         }
-        return out;
+        return pattern;
     }
 
     public void clear (View view){

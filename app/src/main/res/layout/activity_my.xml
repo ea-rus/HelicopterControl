@@ -65,14 +65,9 @@
             android:textSize="7dp"
             android:text="debug:"
             android:textAlignment="viewEnd"
-            android:textColor="#ffffffff" />
+            android:textColor="#ffffffff"
+            android:editable="false"
+            android:enabled="false" />
 
-        <Button
-            style="?android:attr/buttonStyleSmall"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Джостик"
-            android:id="@+id/button_joystick"
-            android:layout_gravity="right|center_vertical" />
     </FrameLayout>
 </RelativeLayout>
